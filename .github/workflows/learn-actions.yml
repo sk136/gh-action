@@ -1,0 +1,194 @@
+# =============================================================================
+#  DUMMY LEARNER WORKFLOW — pure GitHub Actions concepts, no project code.
+#  Nothing here builds or tests any real software. It just prints stuff so you
+#  can watch the GitHub UI react. Delete it whenever you're done.
+#
+#  HOW TO USE
+#    1. Put this file at  <repo-root>/.github/workflows/learn-actions.yml
+#    2. Commit + push to GitHub
+#    3. Repo -> "Actions" tab -> click "Learn GitHub Actions" on the left
+#    4. Click a run -> click a job -> click a step to see its log
+# =============================================================================
+
+name: Learn GitHub Actions
+
+# -----------------------------------------------------------------------------
+# 1) TRIGGERS — the "on:" block = WHEN the workflow runs
+# -----------------------------------------------------------------------------
+on:
+  push:                 # any push to any branch
+  pull_request:         # any pull request activity
+  workflow_dispatch:    # manual "Run workflow" button in the Actions UI
+    inputs:             # extra form fields shown when running manually
+      greeting:
+        description: "What should we say?"
+        required: false
+        default: "Hello"
+        type: string
+
+# -----------------------------------------------------------------------------
+# 2) WORKFLOW-LEVEL ENV — variables available to every job/step below
+# -----------------------------------------------------------------------------
+env:
+  GREETING: ${{ inputs.greeting || 'Hello' }}   # falls back on push/PR events
+  PROJECT_NAME: dummy-demo
+
+# -----------------------------------------------------------------------------
+# 3) JOBS — run in parallel unless linked with "needs:"
+# -----------------------------------------------------------------------------
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # JOB A: the simplest possible job. Shows a step, env vars, and shell output.
+  # ---------------------------------------------------------------------------
+  say-hello:
+    name: A · Say hello
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print basic info
+        run: |
+          echo "GREETING = $GREETING"
+          echo "PROJECT_NAME = $PROJECT_NAME"
+          echo "Triggered by event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Actor (who triggered it): ${{ github.actor }}"
+          echo "Runner OS: ${{ runner.os }}"
+
+      - name: Step-level env override
+        env:
+          GREETING: "Goodbye"          # shadows the workflow-level value
+        run: echo "$GREETING from a step-scoped variable!"
+
+      - name: Show the GitHub-hosted context objects
+        run: |
+          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
+          echo "GITHUB_REPOSITORY = $GITHUB_REPOSITORY"
+          echo "GITHUB_RUN_NUMBER = $GITHUB_RUN_NUMBER"
+
+  # ---------------------------------------------------------------------------
+  # JOB B: MATRIX — run the same job N times with different values.
+  #         On GitHub you'll see 3 boxes appear under this job.
+  # ---------------------------------------------------------------------------
+  matrix-demo:
+    name: B · Matrix (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false             # don't cancel siblings if one fails
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Use the matrix value
+        run: echo "This box is running Python ${{ matrix.python }}"
+
+      - name: Actually install that Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Prove which version we got
+        run: python --version
+
+  # ---------------------------------------------------------------------------
+  # JOB C: ARTIFACTS — create a file, upload it, download it from the UI.
+  #         After the run, the file appears at the bottom of the run summary.
+  # ---------------------------------------------------------------------------
+  artifact-demo:
+    name: C · Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a file to upload
+        run: |
+          mkdir -p output
+          date > output/report.txt
+          echo "Triggered by: ${{ github.event_name }}" >> output/report.txt
+          echo "Run number: ${{ github.run_number }}" >> output/report.txt
+          cat output/report.txt
+
+      - name: Upload it
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-report
+          path: output/
+
+  # ---------------------------------------------------------------------------
+  # JOB D: OUTPUTS + "needs" — job ordering and passing values between jobs.
+  #         Runs only after say-hello succeeds.
+  # ---------------------------------------------------------------------------
+  producer:
+    name: D · Producer (creates an output)
+    runs-on: ubuntu-latest
+    needs: say-hello                # wait for Job A first
+    outputs:
+      timestamp: ${{ steps.stamp.outputs.value }}
+    steps:
+      - name: Generate a value
+        id: stamp                   # <- the id is how you reference this step
+        run: echo "value=$(date +%Y-%m-%d_%H-%M-%S)" >> "$GITHUB_OUTPUT"
+
+  consumer:
+    name: E · Consumer (reads the output)
+    runs-on: ubuntu-latest
+    needs: producer
+    steps:
+      - name: Read it
+        run: echo "Producer said: ${{ needs.producer.outputs.timestamp }}"
+
+  # ---------------------------------------------------------------------------
+  # JOB F: CONDITIONALS + SUMMARY — if:, always(), and $GITHUB_STEP_SUMMARY
+  #         The summary shows up as rendered Markdown on the run's main page.
+  # ---------------------------------------------------------------------------
+  conditionals:
+    name: F · Conditions & summary
+    runs-on: ubuntu-latest
+    needs: [say-hello, matrix-demo]
+    steps:
+      - name: Only on pushes to main
+        if: github.ref == 'refs/heads/main'
+        run: echo "You pushed to main!"
+
+      - name: Only on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "This is running on a PR."
+
+      - name: Only when triggered manually
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "You clicked the Run workflow button."
+
+      - name: Always runs (even if earlier steps failed)
+        if: always()
+        run: echo "This always prints."
+
+      - name: Write a pretty run summary
+        run: |
+          {
+            echo "## Demo summary"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Greeting | $GREETING |"
+            echo "| Event | ${{ github.event_name }} |"
+            echo "| Branch | ${{ github.ref_name }} |"
+            echo "| Run # | ${{ github.run_number }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # JOB G: DELIBERATE FAILURE — uncomment this job to see what a red X looks
+  #         like, how the UI surfaces the error, and how "needs" downstream
+  #         jobs get skipped.
+  # ---------------------------------------------------------------------------
+  # will-fail:
+  #   name: G · Intentional failure
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Fail on purpose
+  #       run: |
+  #         echo "About to fail..."
+  #         exit 1               # non-zero exit code = step fails = job fails
+  #
+  # blocked-by-failure:
+  #   name: H · Skipped because G failed
+  #   runs-on: ubuntu-latest
+  #   needs: will-fail
+  #   steps:
+  #     - run: echo "Never runs while G is failing."

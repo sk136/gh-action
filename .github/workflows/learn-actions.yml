@@ -132,7 +132,7 @@ jobs:
     needs: producer
     steps:
       - name: Read it
-        run: echo "Producer said: ${{ needs.producer.outputs.timestamp }}"
+        run: 'echo "Producer said: ${{ needs.producer.outputs.timestamp }}"'
 
   # ---------------------------------------------------------------------------
   # JOB F: CONDITIONALS + SUMMARY — if:, always(), and $GITHUB_STEP_SUMMARY

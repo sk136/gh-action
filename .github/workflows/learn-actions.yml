@@ -18,6 +18,13 @@ name: Learn GitHub Actions
 on:
   push:                 # any push to any branch
   pull_request:         # any pull request activity
+  workflow_dispatch:    # manual "Run workflow" button in the Actions UI
+    inputs:             # extra form fields shown when running manually
+      greeting:
+        description: "What should we say?"
+        required: false
+        default: "Hello"
+        type: string
 
 # -----------------------------------------------------------------------------
 # 2) WORKFLOW-LEVEL ENV — variables available to every job/step below
